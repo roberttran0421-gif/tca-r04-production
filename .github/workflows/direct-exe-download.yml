@@ -1,0 +1,77 @@
+name: TCA R04 T0 Direct EXE Download (Technical Pre-release)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/direct-exe-download.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  direct-delivery:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch successful single-EXE technical installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: TCA_R04_T0_SINGLE_SETUP_EXE_NOT_FILM
+          run-id: 42525461553
+          github-token: ${{ github.token }}
+          path: existing
+      - name: Compare installer bytes with original validated SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe='existing/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe'
+          $qa='existing/QA_SINGLE_INSTALLER.json'
+          if (!(Test-Path $exe) -or !(Test-Path $qa)) { throw 'ARTIFACT_FILES_MISSING' }
+          $j=Get-Content $qa -Raw | ConvertFrom-Json
+          $h=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $length=(Get-Item $exe).Length
+          if ($length -ne 382028711 -or $h -ne '667819443422f7b3f4b2b1d3c1f98aacabb80e3bb57eafe0725f7fcc1d9a6fea') { throw 'SHA_OR_SIZE_MISMATCH' }
+          if ($j.sha256 -ne $h -or $j.bytes -ne $length) { throw 'MANIFEST_MISMATCH' }
+          Write-Host "INPUT_VERIFIED: $length bytes SHA256=$h"
+      - name: Create technical pre-release, not a film release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='r04-t0-technical-installer-20261108'
+          @'
+          TECHNICAL TEST INSTALLER ONLY. NOT THE CLAIM AUTOPSY FILM, NOT AN APPROVED FILM RELEASE.
+          One self-extracting Windows x64 installer EXE. No manual ZIP extraction required.
+          Tested: Windows Server 2022 non-admin installation and neutral 19-scene Kokoro MP4 rendering.
+          Windows 10 real-PC T1: NOT TESTED.
+          Film screenplay, original V3 LOCK and V4 REVIEW: NOT INCLUDED.
+          Audio: public neutral demonstration, not final narration.
+          Component redistribution and FFmpeg binary licenses: PENDING FULL REVIEW.
+          Installer: UNSIGNED. Windows security features must remain enabled; do not disable Defender.
+          Original installer SHA-256: 667819443422f7b3f4b2b1d3c1f98aacabb80e3bb57eafe0725f7fcc1d9a6fea
+          Original installer bytes: 382028711.
+          This public technical prerelease is for Founder test access only, not production use.
+          '@ | Set-Content -Path prerelease-notes.txt -Encoding utf8
+          gh release create $tag 'existing/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe' 'existing/QA_SINGLE_INSTALLER.json' --repo $env:GITHUB_REPOSITORY --title 'TCA R04 T0 Technical Windows Installer - NOT FILM' --prerelease --latest=false --notes-file prerelease-notes.txt
+          if ($LASTEXITCODE -ne 0) { throw 'GH_RELEASE_CREATE_FAILED' }
+      - name: Verify EXE by downloading from its own GitHub release link
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='r04-t0-technical-installer-20261108'
+          New-Item -ItemType Directory -Force verified_download | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern 'TCA_R04_T0_SETUP_TECHNICAL_TEST.exe' --dir verified_download
+          if ($LASTEXITCODE -ne 0) { throw 'RELEASE_DOWNLOAD_FAILED' }
+          $path='verified_download/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe'
+          if (!(Test-Path $path)) { throw 'RELEASE_EXE_MISSING' }
+          $sha=(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -ne '667819443422f7b3f4b2b1d3c1f98aacabb80e3bb57eafe0725f7fcc1d9a6fea') { throw 'RELEASE_DOWNLOAD_HASH_MISMATCH' }
+          $bytes=(Get-Item $path).Length
+          if ($bytes -ne 382028711) { throw 'RELEASE_DOWNLOAD_SIZE_MISMATCH' }
+          $asset='https://github.com/roberttran0421-gif/tca-r04-production/releases/download/r04-t0-technical-installer-20261108/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe'
+          Write-Host "DIRECT_DOWNLOAD_VERIFIED_SHA256=$sha"
+          Write-Host "DIRECT_DOWNLOAD_VERIFIED_BYTES=$bytes"
+          Write-Host "DIRECT_DOWNLOAD_LINK=$asset"
