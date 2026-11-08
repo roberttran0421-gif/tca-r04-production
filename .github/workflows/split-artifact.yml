@@ -44,7 +44,7 @@ jobs:
           }
           Copy-Item "downloaded/LICENSE_AUDIT.md" "staging/EVIDENCE/"
           if (Test-Path "downloaded/requirements-installed.txt") { Copy-Item "downloaded/requirements-installed.txt" "staging/EVIDENCE/" }
-          Get-ChildItem staging -Recurse -File | ForEach-Object {
+          Get-ChildItem staging -Recurse -File | Where-Object { $_.Name -ne 'SHA256_CHECKSUMS.txt' } | ForEach-Object {
             "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash )  $( $_.FullName.Substring((Resolve-Path staging).Path.Length+1) )"
           } | Out-File -Encoding utf8 staging/EVIDENCE/SHA256_CHECKSUMS.txt
           Get-ChildItem staging/EXE -Recurse -File | Measure-Object Length -Sum | Format-List
