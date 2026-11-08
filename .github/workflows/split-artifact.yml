@@ -37,6 +37,7 @@ jobs:
           New-Item -ItemType Directory -Force staging/EXE,staging/MODEL/model,staging/EVIDENCE | Out-Null
           robocopy "$src" "staging/EXE" /E /XD "$src/model" /NFL /NDL /NJH /NJS /NC /NS
           if ($LASTEXITCODE -gt 7) { throw "ROBOCOPY_FAILED_$LASTEXITCODE" }
+          $global:LASTEXITCODE=0
           Copy-Item "$src/model/*" "staging/MODEL/model" -Recurse -Force
           foreach ($dir in @("OUT_TONE_PYTHON","OUT_TONE_EXE","OUT_KOKORO_MICHAEL","OUT_KOKORO_ADAM")) {
             if (!(Test-Path "downloaded/$dir/QA.json")) { throw "QA_MISSING_$dir" }
@@ -56,18 +57,18 @@ jobs:
           name: TCA_R04_WIN_EXE_TECHNICAL_NOT_RELEASED
           path: staging/EXE/
           retention-days: 7
-          compression-level: 0
+          compression-level: 6
       - name: Upload Kokoro model separately
         uses: actions/upload-artifact@v4
         with:
           name: TCA_R04_KOKORO_MODEL_TECHNICAL
           path: staging/MODEL/
           retention-days: 7
-          compression-level: 0
+          compression-level: 6
       - name: Upload neutral voice and media QA evidence separately
         uses: actions/upload-artifact@v4
         with:
           name: TCA_R04_WINDOWS_19_SCENE_QA
           path: staging/EVIDENCE/
           retention-days: 7
-          compression-level: 0
+          compression-level: 6
