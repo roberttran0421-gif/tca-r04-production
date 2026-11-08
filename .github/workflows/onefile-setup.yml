@@ -1,0 +1,118 @@
+name: TCA R04 T0 ONE INSTALLER EXE
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/onefile-setup.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installer:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful EXE bundle without rebuilding previous work
+        uses: actions/download-artifact@v4
+        with:
+          name: TCA_R04_WIN_EXE_TECHNICAL_NOT_RELEASED
+          run-id: 42520923032
+          github-token: ${{ github.token }}
+          path: source
+      - name: Verify files and stage Windows setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($f in @('TCA_R04_T0.exe','model/kokoro-v1.0.onnx','model/voices-v1.0.bin')) {
+            if (!(Test-Path (Join-Path source $f))) { throw "SOURCE_MISSING_$f" }
+          }
+          New-Item -ItemType Directory -Force setup/source | Out-Null
+          Copy-Item source/* setup/source -Recurse -Force
+          Get-FileHash setup/source/TCA_R04_T0.exe -Algorithm SHA256 | Format-List
+      - name: Inno Setup for a single non-admin installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $iscc='C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $iscc)) {
+            choco install innosetup -y --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_CHOCOLATEY_FAILED' }
+          }
+          if (!(Test-Path $iscc)) { throw 'INNO_MISSING' }
+          $iss=@'
+          #define App "TCA R04 Technical Test"
+          #define V "0.1.0"
+          [Setup]
+          AppId={{E84D468E-0E41-4A4D-B74B-A19AD4C4DE01}
+          AppName={#App}
+          AppVersion={#V}
+          AppPublisher=TCA Technical Test
+          DefaultDirName={userdocs}\TCA_R04_T0
+          DefaultGroupName=TCA R04 Technical Test
+          DisableProgramGroupPage=yes
+          DisableDirPage=yes
+          PrivilegesRequired=lowest
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          OutputDir=output
+          OutputBaseFilename=TCA_R04_T0_SETUP_TECHNICAL_TEST
+          Compression=lzma2
+          SolidCompression=yes
+          WizardStyle=modern
+          UninstallDisplayIcon={app}\TCA_R04_T0.exe
+          [Files]
+          Source: "source\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          [Icons]
+          Name: "{userdesktop}\TCA R04 Technical Test"; Filename: "{app}\TCA_R04_T0.exe"; WorkingDir: "{app}"
+          [Run]
+          Filename: "{app}\TCA_R04_T0.exe"; Description: "Open TCA R04"; Flags: postinstall nowait skipifsilent
+          '@
+          [IO.File]::WriteAllText((Join-Path (Resolve-Path setup) 'build.iss'),$iss,[Text.Encoding]::UTF8)
+          Push-Location setup
+          & $iscc build.iss
+          if ($LASTEXITCODE -ne 0) { throw 'INNO_BUILD_FAILED' }
+          Pop-Location
+          if (!(Test-Path 'setup/output/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe')) { throw 'NO_INSTALLER' }
+          Get-FileHash 'setup/output/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe' -Algorithm SHA256 | Format-List
+      - name: Install one setup EXE without manual extraction
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $installer=(Resolve-Path setup/output/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe).Path
+          $dest=Join-Path $env:RUNNER_TEMP 'TCA_ONE_SETUP_TEST'
+          $p=Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',("/DIR="+$dest)) -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "INSTALL_FAILED_$($p.ExitCode)" }
+          foreach($f in @('TCA_R04_T0.exe','model/kokoro-v1.0.onnx','model/voices-v1.0.bin')) {
+            if (!(Test-Path (Join-Path $dest $f))) { throw "INSTALL_MISSING_$f" }
+          }
+          Write-Host "SINGLE_EXE_INSTALL_TEST_PASS"
+      - name: Test installed EXE renders Kokoro MP4 on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:RUNNER_TEMP 'TCA_ONE_SETUP_TEST\TCA_R04_T0.exe'
+          $out=Join-Path $env:RUNNER_TEMP 'TCA_ONE_SETUP_OUTPUT'
+          $p=Start-Process -FilePath $exe -ArgumentList @('--ci-kokoro','--voice','am_michael','--out',$out) -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "RENDER_FAILED_$($p.ExitCode)" }
+          $qa=Get-Content (Join-Path $out 'QA.json') -Raw | ConvertFrom-Json
+          if ($qa.scenes -ne 19 -or $qa.audio_mode -ne 'kokoro' -or $qa.decode -ne 'PASS') { throw 'QA_FAILED' }
+          Write-Host "SINGLE_EXE_INSTALL_RENDER_19_SCENES_PASS"
+      - name: Save installer QA SHA and size
+        if: success()
+        shell: pwsh
+        run: |
+          $f=(Resolve-Path setup/output/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe).Path
+          $j=@{name=(Split-Path $f -Leaf);bytes=(Get-Item $f).Length;sha256=(Get-FileHash $f -Algorithm SHA256).Hash.ToLowerInvariant();test='WINDOWS_SERVER_2022_ONE_INSTALLER_AND_REAL_KOKORO_19_SCENES_PASS';win10='NOT_TESTED';license='PENDING';technical_test_only=$true}
+          $j|ConvertTo-Json|Out-File -Encoding utf8 setup/output/QA_SINGLE_INSTALLER.json
+      - name: Upload one-click installer and QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TCA_R04_T0_SINGLE_SETUP_EXE_NOT_FILM
+          path: |
+            setup/output/TCA_R04_T0_SETUP_TECHNICAL_TEST.exe
+            setup/output/QA_SINGLE_INSTALLER.json
+          retention-days: 7
+          compression-level: 6
+          if-no-files-found: warn
